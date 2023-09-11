@@ -1,5 +1,4 @@
 from os import add_dll_directory
-from sys import hash_info
 from z3 import *
 import numpy as np
 import time
@@ -13,7 +12,7 @@ def max_v(v):
     return max
 
 filein = "./instances/*"
-search="normal"
+search="rotation"
 
 fi=[]
 if not os.path.exists("./"+search+"/out"):
@@ -53,15 +52,16 @@ for f in fi:
 
         #boolean array indicating hmax- inde xof true variable is h value
         H = [Bool(f"l_{i}") for i in range(hmax)]
-        for i in range(hmax-1):
-                H[i]=False
-        H[hmax-1]=True
+
+        rot = [Bool(f"r_{i}") for i in range(n)]
 
         # main constraints
         # set true variables in circuit area with area limits
         allc=[]
         for k in range(n):
+            
             allck=[]
+            allck1=[]
             for i in range(wmax - lc[k] + 1):
                 for j in range(hmax - hc[k] + 1):
 
@@ -74,17 +74,48 @@ for f in fi:
                                     ck.append(Not(pc[di][dj][k]))
                         # define each circuit
                         allck.append(And(ck))
-            """     
-            allck+=[If(And(i <= di,di<i + lc[k],j<= dj,dj<j + hc[k]),pc[di][dj][k],pc[di][dj][k]==False) for di in range(wmax) for dj in range(hmax)
-                for i in range(wmax-lc[k]+1) for j in range(hmax-hc[k]+1)]
+            """
+            allck+=[If(And(i <= di,di<i + lcr[k],j<= dj,dj<j + hcr[k]),pc[di][dj][k],pc[di][dj][k]==False) for di in range(wmax) for dj in range(hmax)
+                for i in range(wmax-lcr[k]+1) for j in range(hmax-hcr[k]+1)]
             """
             # constraint only one cistcuit valid
             #allc+=[If(i==j, True,Not(And(allck[i],allck[j]))) for i in range(len(allck)) for j in range(len(allck))]
-            allc+=[Not(And(pair[0],pair[1])) for pair in combinations(allck,2)]
+            allck1+=[Not(And(pair[0],pair[1])) for pair in combinations(allck,2)]
             #constraint al least one circuit valid
-            allc+=[Or(allck)]
+            allck1+=[Or(allck)]
+            allck1+=[Not(rot[k])]
+            a=[And(allck1)]
+
+            allckr=[]
+            allckr1=[]
+            for i in range(wmax - lc[k] + 1):
+                for j in range(hmax - hc[k] + 1):
+
+                        ck=[]
+                        for dj in range(hmax):
+                            for di in range(wmax):
+                                if (j <= dj and dj<j + lc[k]) and (i <= di and di< i + hc[k]):
+                                    ck.append(pc[di][dj][k])
+                                else:
+                                    ck.append(Not(pc[di][dj][k]))
+                        # define each circuit
+                        allckr.append(And(ck))
+        
+            # constraint only one cistcuit valid
+            #allc+=[If(i==j, True,Not(And(allck[i],allck[j]))) for i in range(len(allck)) for j in range(len(allck))]
+            allckr1+=[Not(And(pair[0],pair[1])) for pair in combinations(allckr,2)]
+            #constraint al least one circuit valid
+            allckr1+=[Or(allck)]
             #condition not rotation
-       
+            allckr1+=[rot[k]]
+            ar=[And(allckr)]
+           
+            # constraint one circuit active
+            a=a+ar
+            allc+=[Not(And(pair[0],pair[1]))for pair in combinations(a,2)]
+            allc+=[Or(a)]
+
+
         # constraint for assure no circuit overlapping
         c1=[If (k1==k2,True,Not(And(pc[i][j][k1],pc[i][j][k2])))
             for i in range(wmax) for j in range(hmax) for k1 in range(n) for k2 in range(n)]
@@ -101,21 +132,12 @@ for f in fi:
         bc=np.argmax(a)
         #print(bc)
         c4=[pc[0][0][bc]]
-        
-        """
+
         s=Solver()
         s.add(allc+c1+c2+c3+c4)
         s.set("timeout", 300000)
         ris=s.check()
-        """
-        s=Optimize()
-        s.add(allc+c1+c2+c3+c4)
-        h=np.where(H)
-        print(h)
-        s.minimize(h)
-        s.set("timeout", 300000)
-        ris=s.check()
-        
+
         if ris == sat:
             fo=open(fileout,"w")
             print("SAT")
@@ -135,8 +157,8 @@ for f in fi:
                 #print(v)
                 px.append(v[0][0])
                 py.append(v[1][0])
-                fo.write(str(lc[k])+" "+str(hc[k])+" "+str(px[k])+" "+str(py[k])+"\n")
-                print(str(lc[k])+" "+str(hc[k])+" "+str(px[k])+" "+str(py[k]))
+                fo.write(str(lc[k])+" "+str(hc[k])+" "+str(px[k])+" "+str(py[k])+" "+str(m[rot[k]])+"\n")
+                print(str(lc[k])+" "+str(hc[k])+" "+str(px[k])+" "+str(py[k])+" "+str(m.evaluate(rot[k])))
             fo.close()
         elif ris == unsat:
             fo=open(fileout,"w")
